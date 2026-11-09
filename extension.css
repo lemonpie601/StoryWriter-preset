@@ -1,6 +1,21 @@
-.mspx-panel{display:grid;gap:10px;margin:0 0 18px;padding:14px;border:1px solid currentColor;border-radius:10px;color:inherit;font:inherit}
-.mspx-panel fieldset{display:grid;gap:8px;min-width:0;padding:10px;border:1px solid currentColor;border-radius:6px}
+.mspx-panel{display:grid;gap:10px;margin:0 0 18px;padding:14px;border:1px solid var(--border,#ded7ce);border-radius:12px;color:inherit;font:inherit}
 .mspx-panel label{display:flex;gap:8px;align-items:center;font:inherit}
 .mspx-panel select{max-width:100%;min-width:0}
 .mspx-panel p{margin:0;overflow-wrap:anywhere}
 [data-mspx-disabled="true"]{opacity:.5}
+.mspx-preview-content pre{white-space:pre-wrap;overflow-wrap:anywhere;font:13px/1.55 ui-monospace,monospace}
+.mspx-variables{border:1px solid var(--border,#ded7ce);border-radius:10px;background:var(--card,transparent);overflow:hidden}
+.mspx-variables summary{display:flex;align-items:center;gap:8px;list-style:none;cursor:pointer;padding:11px 13px;font-size:13px;font-weight:600;line-height:1.4;user-select:none}
+.mspx-variables summary::-webkit-details-marker{display:none}
+.mspx-variables summary::marker{content:""}
+.mspx-variables summary::after{content:"";width:6px;height:6px;margin-left:5px;margin-right:2px;border-right:1.5px solid currentColor;border-bottom:1.5px solid currentColor;transform:rotate(45deg) translateY(-2px);opacity:.6;transition:transform .12s ease}
+.mspx-variables[open] summary::after{transform:rotate(225deg) translate(-1px,-1px)}
+.mspx-variables summary:hover{background:var(--muted,rgba(128,128,128,.06))}
+.mspx-variables summary:focus-visible{outline:2px solid var(--primary,#a57b67);outline-offset:-3px;border-radius:9px}
+.mspx-variables-label{flex:1}
+.mspx-variables-count{display:inline-flex;min-width:20px;height:20px;align-items:center;justify-content:center;padding:0 5px;border-radius:6px;background:var(--muted,rgba(128,128,128,.08));font-size:11px;font-weight:500;opacity:.8;box-sizing:border-box}
+.mspx-variable{display:grid;min-width:0;padding:12px 13px;border-top:1px solid var(--border,#ded7ce);gap:8px}
+.mspx-variable-name{font-size:12px;font-weight:600;color:var(--muted-foreground,inherit)}
+.mspx-variables label{font-size:12px;line-height:1.5}
+.mspx-sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+@media(prefers-reduced-motion:reduce){.mspx-variables summary::after{transition:none}}

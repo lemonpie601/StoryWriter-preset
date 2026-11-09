@@ -1,4 +1,4 @@
-// Story Writer Presets 1.0.2 — AGPL-3.0-only
+// Story Writer Presets 1.0.7 — AGPL-3.0-only
 (()=>{
 const __m3=(()=>{
 // Vendored from Pasta-Devs/Marinara; AGPL-3.0-only. See NOTICE.md.
@@ -1548,11 +1548,11 @@ function resolveGroupCharacters(ctx) {
 function getCharacterFieldValue(profile, field) {
     return stripMacroComments(profile[field] ?? "");
 }
-function resolveCharacterFieldValue(profile, field, depth, baseContext) {
+function resolveCharacterFieldValue(profile, field, depth, baseContext, options = {}) {
     const value = getCharacterFieldValue(profile, field);
     if (!value) return "";
     if (depth >= MAX_CHARACTER_FIELD_RESOLUTION_DEPTH) return "";
-    return resolveCharacterScopedMacros(value, profile, depth + 1, baseContext);
+    return resolveCharacterScopedMacros(value, profile, depth + 1, baseContext, options);
 }
 function macroContextForCharacterProfile(profile, base) {
     return {
@@ -1595,10 +1595,10 @@ function macroContextForCharacterProfile(profile, base) {
         }
     };
 }
-function resolveCharacterScopedMacros(template, profile, depth = 0, baseContext) {
+function resolveCharacterScopedMacros(template, profile, depth = 0, baseContext, options = {}) {
     const scopedContext = macroContextForCharacterProfile(profile, baseContext);
-    const scoped = resolveConditionalBlocks(stripMacroComments(template), scopedContext, {});
-    return scoped.replace(/\{\{\s*original\s*\}\}/gi, "").replace(/\{\{\s*char(?:Name)?\s*\}\}/gi, ()=>profile.name).replace(/\{\{\s*char(?:Name)?Phonetic\s*\}\}/gi, ()=>profile.phoneticName ?? profile.name).replace(/\{\{\s*group\s*\}\}/gi, ()=>resolveGroupCharacters(scopedContext)).replace(/\{\{\s*description\s*\}\}/gi, ()=>resolveCharacterFieldValue(profile, "description", depth, baseContext)).replace(/\{\{\s*personality\s*\}\}/gi, ()=>resolveCharacterFieldValue(profile, "personality", depth, baseContext)).replace(/\{\{\s*backstory\s*\}\}/gi, ()=>resolveCharacterFieldValue(profile, "backstory", depth, baseContext)).replace(/\{\{\s*appearance\s*\}\}/gi, ()=>resolveCharacterFieldValue(profile, "appearance", depth, baseContext)).replace(/\{\{\s*scenario\s*\}\}/gi, ()=>resolveCharacterFieldValue(profile, "scenario", depth, baseContext)).replace(/\{\{\s*example\s*\}\}/gi, ()=>resolveCharacterFieldValue(profile, "example", depth, baseContext)).replace(/\{\{\s*charSysInfo\s*\}\}/gi, ()=>resolveCharacterFieldValue(profile, "systemPrompt", depth, baseContext)).replace(/\{\{\s*charPostHistory\s*\}\}/gi, ()=>resolveCharacterFieldValue(profile, "postHistoryInstructions", depth, baseContext));
+    const scoped = resolveConditionalBlocks(stripMacroComments(template), scopedContext, options);
+    return scoped.replace(/\{\{\s*original\s*\}\}/gi, "").replace(/\{\{\s*char(?:Name)?\s*\}\}/gi, ()=>profile.name).replace(/\{\{\s*char(?:Name)?Phonetic\s*\}\}/gi, ()=>profile.phoneticName ?? profile.name).replace(/\{\{\s*group\s*\}\}/gi, ()=>resolveGroupCharacters(scopedContext)).replace(/\{\{\s*description\s*\}\}/gi, ()=>resolveCharacterFieldValue(profile, "description", depth, baseContext, options)).replace(/\{\{\s*personality\s*\}\}/gi, ()=>resolveCharacterFieldValue(profile, "personality", depth, baseContext, options)).replace(/\{\{\s*backstory\s*\}\}/gi, ()=>resolveCharacterFieldValue(profile, "backstory", depth, baseContext, options)).replace(/\{\{\s*appearance\s*\}\}/gi, ()=>resolveCharacterFieldValue(profile, "appearance", depth, baseContext, options)).replace(/\{\{\s*scenario\s*\}\}/gi, ()=>resolveCharacterFieldValue(profile, "scenario", depth, baseContext, options)).replace(/\{\{\s*example\s*\}\}/gi, ()=>resolveCharacterFieldValue(profile, "example", depth, baseContext, options)).replace(/\{\{\s*charSysInfo\s*\}\}/gi, ()=>resolveCharacterFieldValue(profile, "systemPrompt", depth, baseContext, options)).replace(/\{\{\s*charPostHistory\s*\}\}/gi, ()=>resolveCharacterFieldValue(profile, "postHistoryInstructions", depth, baseContext, options));
 }
 function resolveDeferredCharacterMacros(template, profile, baseContext) {
     if (!hasDeferredCharacterMacros(template)) return template;
@@ -1732,7 +1732,7 @@ function hasCharacterMacro(template) {
     }
     return false;
 }
-function expandBracketedCharacterBlocks(template, ctx) {
+function expandBracketedCharacterBlocks(template, ctx, options = {}) {
     const profiles = ctx.characterProfiles ?? [];
     if (profiles.length <= 1 || !hasCharacterMacro(template)) {
         return template;
@@ -1761,7 +1761,7 @@ function expandBracketedCharacterBlocks(template, ctx) {
             continue;
         }
         changed = true;
-        expandedLines.push(...profiles.map((profile)=>resolveCharacterScopedMacros(block, profile, 0, ctx)).join("\n").split("\n"));
+        expandedLines.push(...profiles.map((profile)=>resolveCharacterScopedMacros(block, profile, 0, ctx, options)).join("\n").split("\n"));
         index = endIndex;
     }
     return changed ? expandedLines.join("\n") : template;
@@ -2483,6 +2483,7 @@ function evaluateParsedCondition(written, ctx, options) {
     const left = resolveConditionalOperand(parsed.left, ctx, options);
     if (parsed.operator === "truthy" && options.inertUnknownPredicates && stripOuterQuotes(parsed.left) === null) {
         const token = parsed.left.trim();
+        if (/^(?:setvar|addvar|addnumvar|incvar|decvar)\b/i.test(token)) return false;
         if (left === token && !/^(?:true|false|yes|no|on|off|null|undefined|[+-]?\d+(?:\.\d+)?)$/i.test(token) && readMacroVariable(ctx.variables, token) === undefined && readMacroVariable(ctx.localVariables, token) === undefined) {
             const braced = `{{${token}}}`;
             if (resolveMacros(braced, ctx, {
@@ -3630,7 +3631,7 @@ function resolveMacros(template, ctx, options = {}) {
         return parts.filter((part)=>typeof part === "string" && part.trim().length > 0).join("\n");
     };
     if (/\{\{persona\}\}/i.test(result)) personaText = buildPersonaText();
-    result = expandBracketedCharacterBlocks(result, ctx);
+    result = expandBracketedCharacterBlocks(result, ctx, options);
     result = resolveConditionalBlocks(result, ctx, options);
     result = result.replace(/\{\{\s*(?:noop|original)\s*\}\}/gi, "");
     result = replaceBalancedMacros(result, (body)=>/^banned(?:\s+[\s\S]*)?$/i.test(body.trim()) ? "" : undefined);
@@ -3911,13 +3912,14 @@ function compose({full,choices,source,originalMessages,rng=Math.random}){
   let clean=out;for(let i=0;i<64;i++){const next=clean.replace(/\{\{[^{}]*\}\}/g,'');if(next===clean)break;clean=next;}return clean;
  };
  const charContext=c=>({...ctx,char:c.name,characterFields:{...c,example:c.exampleDialogue}});
- const claimedCharacterFields=new Set();
+ const claimedCharacterFields=new Set();let claimedCharacterName=false;
  const characterText=rawFields=>{
   const all=['description','personality','backstory','appearance','scenario','exampleDialogue'];
-  let fields=Array.isArray(rawFields)?rawFields.map(k=>k==='mes_example'?'exampleDialogue':k).filter(k=>all.includes(k)):all;
-  if(rawFields?.length&&!fields.length)fields=all;
+  const recognized=Array.isArray(rawFields)?rawFields.map(k=>['mes_example','example_dialogue'].includes(k)?'exampleDialogue':k).filter(k=>k==='name'||all.includes(k)):null;
+  let fields=recognized===null||rawFields?.length&&!recognized.length?all:recognized.filter(k=>k!=='name');
+  const nameOnly=recognized?.includes('name')&&fields.length===0&&!claimedCharacterName;
   fields=fields.filter(k=>!claimedCharacterFields.has(k)&&!(k==='exampleDialogue'&&counts.dialogue_examples));
-  if(!fields.length)return '';for(const k of fields)claimedCharacterFields.add(k);
+  if(!fields.length&&!nameOnly)return '';claimedCharacterName=true;for(const k of fields)claimedCharacterFields.add(k);
   return characters.map(c=>{const selected={...c};for(const k of all)if(!fields.includes(k))selected[k]='';return resolve(formatCharacterCard(selected,user),charContext(c));}).join('\n');
  };
  const personaText=()=>personas.map(p=>resolve(formatPersona(p,char),{...ctx,user:p.name,personaFields:{...p,example:p.exampleDialogue}})).join('\n');
@@ -3926,7 +3928,7 @@ function compose({full,choices,source,originalMessages,rng=Math.random}){
  const continuing=source.mode==='continue'&&chapters.length>0,prior=continuing?chapters.slice(0,-1):chapters,partial=continuing&&chapters.at(-1)?.text.trim()?chapters.at(-1):null,number=continuing?chapters.length:chapters.length+1;
  const keepFrom=Math.max(0,prior.length-Math.max(0,settings.keepFullChapters));
  const summaries=prior.flatMap((c,i)=>i<keepFrom&&c.summary.trim()?[`Chapter ${i+1} — ${chapterTitle(c.text)||'untitled'} (summary): ${c.summary.trim()}`]:[]).join('\n\n');
- const safe={...settings,author:'',style:'',systemPrompt:''};
+ const safe={...settings,systemPrompt:''};
  const fallbackLore=counts.lorebook?[]:lore.filter(e=>!(e.position===0&&counts.world_info_before)&&!(e.position===1&&counts.world_info_after));
  const auxiliary=joinSections([section('story_details',storyDetails(safe)),section('story_overview',resolve(safe.overview)),section('story_notes',resolve(safe.notes)),!counts.character?section('characters',characterText()):'',!counts.persona?section('personas',personaText()):'',section('world_info',resolve(worldInfo(fallbackLore,{char,user}))),safe.timeline.length?section('timeline',`${TIMELINE_INTRO}\n${timelineList(safe.timeline)}`):'',!counts.chat_summary?section('earlier_chapters',summaries):'',section('length',lengthSection(safe,chapters,number,partial)),section('banned_phrases',safe.bannedPhrases?`Never use these words or phrases: ${safe.bannedPhrases}`:''),section('language',safe.language?`Write the story in ${safe.language}.`:''),section('formatting',formattingSection(safe,number,!!partial))]);
  // Upstream owns folding, author-note depth, chapter continuation and historical requests.
@@ -3980,8 +3982,8 @@ function install(marinara){
  const key=Symbol.for('marinara.story-writer-presets.v1');
  window[key]?.();
  const previous=window.fetch;
- let alive=true,store={stories:{}},activeId=null,identityPending=false,generation=0,root=null,panel=null,selectedFull=null,list=[],status='불러오는 중…',saveQueue=Promise.resolve(),renderQueued=false,lastPanelSignature='';
- const disabled=new Map(),rawCache=new Map();
+ let alive=true,store={stories:{}},activeId=null,identityPending=false,generation=0,root=null,writingRoot=null,panel=null,selectedFull=null,list=[],status='불러오는 중…',saveQueue=Promise.resolve(),renderFrame=0,lastPanelSignature=null,selectedLoad=null;
+ const disabled=new Map(),rawCache=new Map(),initializedWriting=new WeakSet();let legacyPreview=null;
  const fail=m=>{throw new Error(m);};
  const same=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
  const choiceState=id=>Object.hasOwn(store.stories,id)?store.stories[id]:{presetId:'',choices:{}};
@@ -3999,51 +4001,58 @@ function install(marinara){
  function onStoryAction(event){const button=event.target.closest?.('button');if(!button||!button.closest('.sw-root'))return;const picker=button.matches('.sw-story-item')&&button.getAttribute('aria-current')!=='true';const section=button.closest('.sw-section');const action=section?.querySelector('.lucide-library')&&button.querySelector('.lucide-plus,.lucide-copy');if(picker||action){identityPending=true;generation++;selectedFull=null;status='작품 전환 확인 중… 오래 지속되면 페이지를 새로고침하세요.';schedule();}}
  document.addEventListener('click',onStoryAction,true);
  async function full(id,signal){const value=normalizePreset(await json(`/api/prompts/${encodeURIComponent(id)}/full`,{signal}));analyzePreset(value);return value;}
- async function refreshSelected(){
+ function refreshSelected(){
+  const gen=generation,state=choiceState(activeId);if(selectedLoad?.generation===gen&&selectedLoad.presetId===state.presetId)return selectedLoad.promise;
+  const load={generation:gen,presetId:state.presetId,promise:null};selectedLoad=load;load.promise=readSelected().finally(()=>{if(selectedLoad===load)selectedLoad=null;});return load.promise;
+ }
+ async function readSelected(){
   const gen=generation,state=choiceState(activeId);if(!state.presetId){selectedFull=null;status='프리셋 사용 안 함';schedule();return;}
-  try{const data=await full(state.presetId);if(alive&&gen===generation){selectedFull=data;resolveChoices(data,state.choices);status='프리셋 적용 준비됨 · 작가/서술 방식/기본 프롬프트 제외';}}
+  try{const data=await full(state.presetId);if(alive&&gen===generation){selectedFull=data;resolveChoices(data,state.choices);status='프리셋 적용 준비됨 · 미지원 마커·매크로는 비활성 처리';}}
   catch(e){if(alive&&gen===generation)status=e.message;}
   schedule();
  }
- function restoreFields(){for(const[el,was]of disabled){el.disabled=was;el.removeAttribute('data-mspx-disabled');}disabled.clear();}
+ function restoreFields(keep=null){for(const[el,was]of disabled){if(el===keep)continue;if(el.disabled!==was)el.disabled=was;if(el.hasAttribute('data-mspx-disabled'))el.removeAttribute('data-mspx-disabled');disabled.delete(el);}}
  function lockFields(){
-  restoreFields();if(!root||identityPending||!choiceState(activeId).presetId)return;
-  const story=root.querySelector('.lucide-book-open')?.closest('.sw-section')?.querySelector('.sw-section-body');
-  const fields=story?[...story.querySelectorAll(':scope > .sw-field')]:[];
-  const writing=writingBody();const texts=writing?[...writing.querySelectorAll(':scope > .sw-field textarea, :scope > textarea')]:[];
-  // Source 0.2.0: title, overview, author, style, language, notes. Fail rather than guess a translated label.
-  if(fields.length===6)for(const f of fields.slice(2,4))for(const el of f.querySelectorAll('input,textarea')){disabled.set(el,el.disabled);el.disabled=true;el.dataset.mspxDisabled='true';}
-  if(texts.length===3){const el=texts[1];disabled.set(el,el.disabled);el.disabled=true;el.dataset.mspxDisabled='true';}
+  let target=null;if(root&&!identityPending&&choiceState(activeId).presetId){const writing=writingBody(),texts=writing?[...writing.querySelectorAll(':scope > .sw-field textarea, :scope > textarea')]:[];if(texts.length===3)target=texts[1];}
+  restoreFields(target);if(target){if(!disabled.has(target))disabled.set(target,target.disabled);if(!target.disabled)target.disabled=true;if(target.dataset.mspxDisabled!=='true')target.dataset.mspxDisabled='true';}
  }
- function writingBody(){return root?.querySelector('.lucide-pen-line')?.closest('.sw-section')?.querySelector('.sw-section-body');}
+ function writingBody(){const section=root?.querySelector('.lucide-pen-line')?.closest('.sw-section');if(section?.querySelector('.sw-section-toggle')?.getAttribute('aria-expanded')==='false')return null;return section?.querySelector('.sw-section-body');}
  function element(tag,text,props={}){const e=document.createElement(tag);if(text!==null)e.textContent=text;Object.assign(e,props);return e;}
- function schedule(){if(!alive||renderQueued)return;renderQueued=true;queueMicrotask(()=>{renderQueued=false;if(alive)render();});}
+ function schedule(){if(!alive||renderFrame)return;renderFrame=requestAnimationFrame(()=>{renderFrame=0;if(alive)render();});}
  function render(){
-  const next=document.querySelector('.sw-root');if(next!==root){root=next;panel?.remove();panel=null;restoreFields();}
+  const next=root?.isConnected?root:document.querySelector('.sw-root');if(next!==root){root=next;panel?.remove();panel=null;restoreFields();}
+  syncLegacyPreview();
+  const writingSection=root?.querySelector('.lucide-pen-line')?.closest('.sw-section'),writingToggle=writingSection?.querySelector('.sw-section-toggle');
+  writingRoot=writingSection;
+  if(writingToggle&&!initializedWriting.has(writingSection)){initializedWriting.add(writingSection);if(writingToggle.getAttribute('aria-expanded')==='true'){writingToggle.click();return;}}
   const body=writingBody();if(!body){panel?.remove();panel=null;restoreFields();return;}
-  if(panel?.parentNode!==body){panel?.remove();panel=element('div',null,{className:'mspx-panel'});panel.dataset.mspxPanel='true';body.prepend(panel);lastPanelSignature='';}
-  const signature=JSON.stringify([activeId,identityPending,choiceState(activeId).presetId,list.map(p=>[p.id,p.name]),selectedFull]);
-  if(lastPanelSignature===signature){const note=panel.querySelector('[role="status"]');if(note&&note.textContent!==status)note.textContent=status;lockFields();return;}
+  if(panel?.parentNode!==body){panel?.remove();panel=element('div',null,{className:'mspx-panel'});panel.dataset.mspxPanel='true';body.prepend(panel);lastPanelSignature=null;}
+  const signature=[activeId,identityPending,generation,choiceState(activeId).presetId,list,selectedFull];
+  if(lastPanelSignature&&signature.every((value,i)=>value===lastPanelSignature[i])){const note=panel.querySelector('[role="status"]');if(note&&note.textContent!==status)note.textContent=status;lockFields();return;}
   lastPanelSignature=signature;
-  const focus=document.activeElement,keep=panel.contains(focus)?focus.id:null;
+  const renderedId=activeId,renderedGeneration=generation,renderedPresetId=choiceState(activeId).presetId;
+  const controlsCurrent=()=>alive&&!identityPending&&select.isConnected&&panel?.contains(select)&&activeId===renderedId&&generation===renderedGeneration&&choiceState(renderedId).presetId===renderedPresetId;
   panel.replaceChildren();
   const label=element('label','프리셋',{htmlFor:'mspx-preset'}),select=element('select',null,{id:'mspx-preset',className:'sw-select'});select.dataset.mspxSelect='true';
   select.append(element('option','사용 안 함',{value:''}));for(const p of list)select.append(element('option',p.name||p.id,{value:p.id}));
   const state=identityPending?{presetId:'',choices:{}}:choiceState(activeId);if(state.presetId&&!list.some(p=>p.id===state.presetId))select.append(element('option','현재 프리셋 (삭제되었거나 목록 미확인)',{value:state.presetId}));select.value=state.presetId;select.disabled=!activeId||identityPending;
-  select.addEventListener('change',async()=>{const id=activeId,gen=++generation;selectedFull=null;const presetId=select.value;store.stories[id]={presetId,choices:{}};status='불러오는 중…';schedule();try{if(presetId){const data=await full(presetId);if(!alive||gen!==generation)return;const choices=initialChoices(data);store.stories[id]={presetId,choices};selectedFull=data;resolveChoices(data,choices);}status=presetId?'프리셋 적용 준비됨 · 작가/서술 방식/기본 프롬프트 제외':'프리셋 사용 안 함';}catch(e){status=e.message;}await save().catch(()=>{});schedule();});
+  select.addEventListener('change',async()=>{if(!controlsCurrent()||!renderedId)return;const id=renderedId,gen=++generation;selectedFull=null;const presetId=select.value;store.stories[id]={presetId,choices:{}};status='불러오는 중…';schedule();try{if(presetId){const data=await full(presetId);if(!alive||gen!==generation||activeId!==id)return;const choices=initialChoices(data);store.stories[id]={presetId,choices};selectedFull=data;resolveChoices(data,choices);}status=presetId?'프리셋 적용 준비됨 · 미지원 마커·매크로는 비활성 처리':'프리셋 사용 안 함';}catch(e){if(!alive||gen!==generation||activeId!==id)return;status=e.message;}await save().catch(()=>{});schedule();});
   const refresh=element('button','목록 새로고침',{type:'button',className:'sw-button'});refresh.addEventListener('click',()=>void refreshList());
   const msg=element('p',status,{className:'sw-hint'});msg.setAttribute('role','status');panel.append(label,select,refresh,msg);
-  if(selectedFull&&state.presetId===selectedFull.preset.id){for(const [i,b]of (selectedFull.choiceBlocks??[]).entries()){
-   const wrapper=element('fieldset',null),legend=element('legend',b.question||b.variableName);wrapper.append(legend);const opts=[...(b.options??[])];if(b.optionSort==='alphabetical')opts.sort((a,b)=>a.label.localeCompare(b.label));
-   const commit=value=>{if(activeId!==null){const s=choiceState(activeId);s.choices[b.variableName]=value;status='변수 설정 저장 중…';void save().then(()=>{status='변수 설정 저장됨';schedule();}).catch(()=>{});}};
+  if(selectedFull&&state.presetId===selectedFull.preset.id&&selectedFull.choiceBlocks?.length){
+   const accordion=element('details',null,{className:'mspx-variables',open:store.ui?.variablesOpen===true}),summary=element('summary',null),summaryLabel=element('span','프리셋 변수',{className:'mspx-variables-label'}),count=element('span',String(selectedFull.choiceBlocks.length),{className:'mspx-variables-count'});summary.append(summaryLabel,count);accordion.append(summary);
+   accordion.addEventListener('toggle',()=>{if(!controlsCurrent()||!accordion.isConnected||(store.ui?.variablesOpen===true)===accordion.open)return;store.ui={...(store.ui??{}),variablesOpen:accordion.open};void save().catch(()=>{});});panel.append(accordion);
+   for(const [i,b]of (selectedFull.choiceBlocks??[]).entries()){
+   const wrapper=element('div',null,{className:'mspx-variable'}),legend=element('span',b.question||b.variableName,{id:`mspx-variable-title-${i}`,className:'mspx-variable-name'});wrapper.setAttribute('role','group');wrapper.setAttribute('aria-labelledby',legend.id);wrapper.append(legend);const opts=[...(b.options??[])];if(b.optionSort==='alphabetical')opts.sort((a,b)=>a.label.localeCompare(b.label));
+   const commit=value=>{if(controlsCurrent()&&renderedId!==null){const s=choiceState(renderedId);s.choices[b.variableName]=value;status='변수 설정 저장 중…';void save().then(()=>{if(!controlsCurrent())return;status='변수 설정 저장됨';schedule();}).catch(()=>{});}};
    if(flag(b.multiSelect)){
     if(flag(b.randomPick))wrapper.append(element('p','선택한 후보 중 챕터마다 하나를 뽑습니다.',{className:'sw-hint'}));
-    for(const[j,o]of opts.entries()){const input=element('input',null,{type:'checkbox',id:`mspx-var-${i}-${j}`,checked:Array.isArray(state.choices[b.variableName])&&state.choices[b.variableName].includes(o.value)});input.addEventListener('change',()=>{const values=new Set(choiceState(activeId).choices[b.variableName]??[]);input.checked?values.add(o.value):values.delete(o.value);commit([...values]);});const l=element('label',null);l.append(input,document.createTextNode(o.label||'(빈 값)'));wrapper.append(l);}
+    for(const[j,o]of opts.entries()){const input=element('input',null,{type:'checkbox',id:`mspx-var-${i}-${j}`,checked:Array.isArray(state.choices[b.variableName])&&state.choices[b.variableName].includes(o.value)});input.addEventListener('change',()=>{if(!controlsCurrent())return;const values=new Set(choiceState(renderedId).choices[b.variableName]??[]);input.checked?values.add(o.value):values.delete(o.value);commit([...values]);});const l=element('label',null);l.append(input,document.createTextNode(o.label||'(빈 값)'));wrapper.append(l);}
    }else if(opts.length===1){const input=element('input',null,{type:'checkbox',id:`mspx-var-${i}`,checked:state.choices[b.variableName]!==''});input.addEventListener('change',()=>commit(input.checked?opts[0].value:''));const l=element('label',null);l.append(input,document.createTextNode(opts[0].label||b.variableName));wrapper.append(l);
-   }else{const input=element('select',null,{id:`mspx-var-${i}`,className:'sw-select'}),l=element('label',b.question||b.variableName,{htmlFor:input.id});input.append(element('option','선택하세요',{value:'__mspx_unselected__',disabled:true}));for(const o of opts)input.append(element('option',o.label||'(빈 값)',{value:o.value}));input.value=typeof state.choices[b.variableName]==='string'?state.choices[b.variableName]:'__mspx_unselected__';input.addEventListener('change',()=>commit(input.value));wrapper.append(l,input);}
-   panel.append(wrapper);
+   }else{const input=element('select',null,{id:`mspx-var-${i}`,className:'sw-select'}),l=element('label',b.question||b.variableName,{htmlFor:input.id,className:'mspx-sr-only'});input.append(element('option','선택하세요',{value:'__mspx_unselected__',disabled:true}));for(const o of opts)input.append(element('option',o.label||'(빈 값)',{value:o.value}));input.value=typeof state.choices[b.variableName]==='string'?state.choices[b.variableName]:'__mspx_unselected__';input.addEventListener('change',()=>commit(input.value));wrapper.append(l,input);}
+   accordion.append(wrapper);
   }}
-  if(keep)panel.querySelector('#'+CSS.escape(keep))?.focus();lockFields();
+  lockFields();
  }
  async function refreshList(){try{const data=await json('/api/prompts');if(!Array.isArray(data))fail('프리셋 목록 구조가 변경되었습니다.');list=data;await refreshSelected();}catch(e){status=e.message;schedule();}}
  async function preflight(id,signal,requestHeaders){
@@ -4055,7 +4064,7 @@ function install(marinara){
  }
  function asCard(row,persona=false){let d=persona?row:row.data;if(typeof d==='string')d=JSON.parse(d);if(!d||typeof d!=='object')fail('캐릭터 자료 구조가 변경되었습니다.');const e=d.extensions??{};const text=v=>typeof v==='string'?v:'';return {name:text(d.name)||text(row.name),description:text(d.description),personality:text(d.personality),backstory:text(persona?d.backstory:e.backstory),appearance:text(persona?d.appearance:e.appearance),scenario:text(d.scenario),exampleDialogue:text(d.mes_example)};}
  const rows=value=>Array.isArray(value)?value:Array.isArray(value?.items)?value.items:fail('목록 자료 구조가 변경되었습니다.');
- async function sources(doc,request,signal,h){
+ async function sources(doc,request,signal,h,preview=false){
   const settings=normalizeStorySettings(doc.story.settings),chapters=doc.chapters;
   if(!Array.isArray(chapters))fail('챕터 자료 구조가 변경되었습니다.');
   const characters=await Promise.all(settings.characterIds.map(async id=>asCard(await json(`/api/characters/${encodeURIComponent(id)}`,{signal,headers:h}))));
@@ -4064,11 +4073,32 @@ function install(marinara){
   // The host already scanned this exact text before its raw request. Reuse its result; never run a second scan.
   const candidates=[{chapters,mode:'continue'},...(chapters.at(-1)?.text.trim()?[]:[{chapters:chapters.slice(0,-1),mode:'next'}])];
   const results=[];
-  for(const candidate of candidates){const scan=loreScanText(settings,candidate.chapters,request);if(settings.lorebookIds.some(id=>rawCache.get(`/api/lorebooks/${encodeURIComponent(id)}/test`)?.text!==scan))continue;const lore=[];
-   for(const id of settings.lorebookIds){const path=`/api/lorebooks/${encodeURIComponent(id)}`,scanned=rawCache.get(path+'/test');if(!scanned||scanned.text!==scan)fail('로어북 검사 문맥을 확인할 수 없습니다. 설정·프리셋 저장 후 다시 집필하세요.');const entries=rows(await json(path+'/entries',{signal,headers:h}));const activated=new Set(rows(scanned.result.activated??[]).map(e=>e.entryId));for(const entry of entries.filter(e=>e.enabled!==false&&activated.has(e.id)))lore.push({name:typeof entry.name==='string'?entry.name:'',content:typeof entry.content==='string'?entry.content:'',order:typeof entry.order==='number'?entry.order:0,position:typeof entry.position==='number'?entry.position:0});}
+  for(const candidate of candidates){const scan=loreScanText(settings,candidate.chapters,request);if(!preview&&settings.lorebookIds.some(id=>rawCache.get(`/api/lorebooks/${encodeURIComponent(id)}/test`)?.text!==scan))continue;const lore=[];
+   for(const id of settings.lorebookIds){const path=`/api/lorebooks/${encodeURIComponent(id)}`,scanned=rawCache.get(path+'/test'),matched=scanned?.text===scan;if(!preview&&!matched)fail('로어북 검사 문맥을 확인할 수 없습니다. 설정·프리셋 저장 후 다시 집필하세요.');const entries=rows(await json(path+'/entries',{signal,headers:h}));const activated=new Set(matched?rows(scanned.result.activated??[]).map(e=>e.entryId):[]);for(const entry of entries.filter(e=>e.enabled!==false&&(matched?activated.has(e.id):flag(e.constant))))lore.push({name:typeof entry.name==='string'?entry.name:'',content:typeof entry.content==='string'?entry.content:'',order:typeof entry.order==='number'?entry.order:0,position:typeof entry.position==='number'?entry.position:0});}
    results.push({settings,...candidate,characters,personas,lore,request});
   }return results;
  }
+ function releaseLegacyPreview(){
+  if(!legacyPreview)return;const {body,content,nodes}=legacyPreview;if(content.parentNode===body)body.replaceChildren(...nodes);legacyPreview=null;
+ }
+ function syncLegacyPreview(){
+  const host=document.querySelector('.swp-panel'),heading=host?.querySelector('.swp-heading')?.textContent?.trim(),body=host?.querySelector('.swp-scroll');
+  if(!body||!['미리보기','Preview'].includes(heading)||!choiceState(activeId).presetId){releaseLegacyPreview();return;}
+  if(legacyPreview?.body!==body||legacyPreview.content.parentNode!==body){releaseLegacyPreview();const content=element('div',null,{className:'mspx-preview-content'}),note=element('p','불러오는 중…'),pre=element('pre','');content.append(note,pre);legacyPreview={body,nodes:[...body.childNodes],content,note,pre,signature:''};body.replaceChildren(content);}
+  const state=structuredClone(choiceState(activeId)),id=activeId,stamp=generation,view=legacyPreview,signature=JSON.stringify([id,stamp,identityPending,state]);if(signature===view.signature)return;view.signature=signature;
+  if(!alive||identityPending||!id){view.note.textContent='작품 전환 확인 후 미리보기가 갱신됩니다.';view.pre.textContent='';return;}
+  view.note.textContent='집필에서 선택한 프리셋을 적용하는 중…';
+  void (async()=>{try{
+   const doc=await json(`/api/story-writer/stories/${encodeURIComponent(id)}`),request=doc.story.settings.continueMessage?.trim()||'Continue.';
+   if(doc.chapters.at(-1)?.status!=='draft')doc.chapters.push({id:'preview',text:'',summary:'',request,status:'draft'});
+   const candidates=await sources(doc,request,undefined,undefined,true),source=candidates[0];if(!source)fail('미리보기 문맥을 확인할 수 없습니다.');
+   const preset=await full(state.presetId),messages=compose({full:preset,choices:state.choices,source,originalMessages:buildChapterMessages(source)});
+   if(!alive||identityPending||generation!==stamp||activeId!==id||!same(choiceState(id),state)||legacyPreview!==view||view.signature!==signature||!view.content.isConnected)return;
+   view.note.textContent=`적용 프리셋: ${preset.preset.name} · 저장된 설정과 변수 기준. 로어북 동적 활성화·빠른 답장은 실제 집필 시 확정됩니다.`;
+   view.pre.textContent=messages.map((m,i)=>`${i+1}. ${m.role}\n${m.content}`).join('\n\n');
+  }catch(e){if(alive&&legacyPreview===view&&view.signature===signature)view.note.textContent=e.message;}})();
+ }
+
  async function transform(body,signal,h,id){
   const stamp=generation;
   const doc=await json(`/api/story-writer/stories/${encodeURIComponent(id)}`,{signal,headers:h}),messages=body.messages;
@@ -4094,7 +4124,7 @@ function install(marinara){
   const chapter=/^\/api\/story-writer\/stories\/([^/]+)\/chapters(?:\/[^/]+)?$/.exec(path);
   try{
    const generationChapter=chapter&&body?.text===''&&body?.status==='draft'&&typeof body?.request==='string'&&(method==='POST'||(method==='PATCH'&&body.summary===''));
-   if(generationChapter){const id=decodeURIComponent(chapter[1]),stamp=generation;if(root){const entry=await preflight(id,signal,h);if(entry){
+   if(generationChapter){const id=decodeURIComponent(chapter[1]),stamp=generation;if(document.querySelector('.sw-root')){const entry=await preflight(id,signal,h);if(entry){
     const prospective=structuredClone(entry.doc);
     if(method==='POST')prospective.chapters.push({id:body.id,text:'',summary:'',status:'draft',request:body.request});
     else {const target=prospective.chapters.find(c=>c.id===decodeURIComponent(path.split('/').at(-1)));if(!target)fail('재작성할 챕터를 확인할 수 없습니다.');Object.assign(target,body);}
@@ -4104,7 +4134,9 @@ function install(marinara){
    }}}
    if(path==='/api/generate/raw'&&method==='POST'&&typeof body?.runId==='string'&&body.runId.startsWith('story-run-')&&document.querySelector('.sw-root')){
     await ready;const id=activeId;if(!id||identityPending)fail('열린 작품을 확인할 수 없습니다. 작품 전환 후 다시 시도하세요.');
-    if(choiceState(id).presetId){const stamp=generation,state=structuredClone(choiceState(id)),next=await transform(body,signal,h,id);if(signal?.aborted)throw new DOMException('Aborted','AbortError');if(!alive||identityPending||stamp!==generation||activeId!==id||!same(state,choiceState(id)))fail('작품 또는 프리셋 설정이 바뀌었습니다.');return input instanceof Request?previous.call(this,new Request(input,{...init,body:JSON.stringify(next)})):previous.call(this,input,{...init,body:JSON.stringify(next)});}
+    if(choiceState(id).presetId){const stamp=generation,state=structuredClone(choiceState(id)),next=await transform(body,signal,h,id);if(signal?.aborted)throw new DOMException('Aborted','AbortError');if(!alive||identityPending||stamp!==generation||activeId!==id||!same(state,choiceState(id)))fail('작품 또는 프리셋 설정이 바뀌었습니다.');
+
+     return input instanceof Request?previous.call(this,new Request(input,{...init,body:JSON.stringify(next)})):previous.call(this,input,{...init,body:JSON.stringify(next)});}
    }
   }catch(e){if(e.name==='AbortError')throw e;status=e.message;schedule();return new Response(JSON.stringify({error:'Story Writer Presets: '+e.message,message:e.message}),{status:422,headers:{'Content-Type':'application/json'}});}
   const storyLifecycle=(method==='POST'&&(path==='/api/story-writer/stories'||/^\/api\/story-writer\/stories\/[^/]+\/duplicate$/.test(path)))||(method==='DELETE'&&/^\/api\/story-writer\/stories\/[^/]+$/.test(path));
@@ -4116,11 +4148,18 @@ function install(marinara){
   return res;
  }
  window.fetch=wrapped;
- const observer=new MutationObserver(records=>{if(records.every(r=>panel&&(r.target===panel||panel.contains(r.target))))return;schedule();});observer.observe(document.documentElement,{childList:true,subtree:true});
+ const layoutSelector='.sw-root,.sw-section,.sw-section-body,.swp-panel,.swp-head,.swp-heading,.swp-scroll';
+ const containsLayout=node=>node.nodeType===1&&(node.matches(layoutSelector)||(node.childElementCount>0&&node.querySelector(layoutSelector)));
+ const observer=new MutationObserver(records=>{
+  for(const r of records){
+   if((panel&&(r.target===panel||panel.contains(r.target)))||(legacyPreview&&(legacyPreview.content.contains(r.target)||(r.target===legacyPreview.body&&legacyPreview.content.parentNode===legacyPreview.body&&[...r.addedNodes].every(n=>n===legacyPreview.content)))))continue;
+   if(writingRoot?.contains(r.target)||r.target.closest?.('.swp-panel')||(r.type==='attributes'&&r.target===root)||[...r.addedNodes,...r.removedNodes].some(containsLayout)){schedule();break;}
+  }
+ });observer.observe(document.documentElement,{childList:true,subtree:true,attributes:true,attributeFilter:['aria-expanded','data-open','data-sw-sidebar-open']});
  const ready=(async()=>{try{
   // A zero-key PATCH returns the current stored value without changing keys and avoids stale GET caches.
-  const saved=await marinara.storage.patch({});if(saved&&typeof saved==='object'&&saved.stories&&typeof saved.stories==='object')store={stories:structuredClone(saved.stories)};const prefs=await json('/api/story-writer/preferences');if(!activeId)setActive(prefs.lastStoryId);await refreshList();}catch(e){status=e.message;}schedule();})();
- function cleanup(){if(!alive)return;alive=false;observer.disconnect();document.removeEventListener('click',onStoryAction,true);panel?.remove();restoreFields();rawCache.clear();if(window.fetch===wrapped)window.fetch=previous;if(window[key]===cleanup)delete window[key];}
+  const saved=await marinara.storage.patch({});if(saved&&typeof saved==='object'&&saved.stories&&typeof saved.stories==='object')store={stories:structuredClone(saved.stories),ui:{variablesOpen:saved.ui?.variablesOpen===true}};const prefs=await json('/api/story-writer/preferences');await refreshList();if(!activeId)setActive(prefs.lastStoryId);}catch(e){status=e.message;}schedule();})();
+ function cleanup(){if(!alive)return;alive=false;observer.disconnect();if(renderFrame)cancelAnimationFrame(renderFrame);document.removeEventListener('click',onStoryAction,true);releaseLegacyPreview();panel?.remove();restoreFields();rawCache.clear();if(window.fetch===wrapped)window.fetch=previous;if(window[key]===cleanup)delete window[key];}
  window[key]=cleanup;marinara.onCleanup(cleanup);schedule();return cleanup;
 }
 install(marinara);
