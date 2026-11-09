@@ -1,0 +1,6 @@
+.mspx-panel{display:grid;gap:10px;margin:0 0 18px;padding:14px;border:1px solid currentColor;border-radius:10px;color:inherit;font:inherit}
+.mspx-panel fieldset{display:grid;gap:8px;min-width:0;padding:10px;border:1px solid currentColor;border-radius:6px}
+.mspx-panel label{display:flex;gap:8px;align-items:center;font:inherit}
+.mspx-panel select{max-width:100%;min-width:0}
+.mspx-panel p{margin:0;overflow-wrap:anywhere}
+[data-mspx-disabled="true"]{opacity:.5}
